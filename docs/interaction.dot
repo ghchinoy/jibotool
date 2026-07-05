@@ -1,0 +1,203 @@
+digraph JiboInteractionFlow {
+    // General Graph Settings
+    fontname="Helvetica,Arial,sans-serif"
+    fontsize=14
+    rankdir=TB
+    splines=true
+    nodesep=0.4
+    ranksep=0.4
+    bgcolor="#fafafa"
+
+    // Default Node Settings
+    node [
+        fontname="Helvetica,Arial,sans-serif"
+        fontsize=11
+        shape=box
+        style="filled,rounded"
+        fillcolor="#ffffff"
+        color="#b0bec5"
+        penwidth=1.5
+        margin="0.15,0.1"
+    ]
+
+    // Default Edge Settings
+    edge [
+        fontname="Helvetica,Arial,sans-serif"
+        fontsize=10
+        color="#455a64"
+        penwidth=1.2
+        arrowsize=0.8
+    ]
+
+    // Styles for Different Activity Types
+    // Human/Manual Action: Hexagon, Blue
+    // Tool/Automated Action: Rounded Box, Green
+    // Hardware State: Cylinder, Purple
+    // Decision / Check: Diamond, Yellow/Orange
+    // Artifact / Document: Note, Yellow
+
+    // Nodes
+    start [label="START: Run Jibo eMMC-Unlock Flow" shape=oval fillcolor="#eceff1" color="#607d8b" penwidth=2]
+
+    // Phase 0: Preflight
+    subgraph cluster_phase0 {
+        label="Phase 0: Preflight Verification"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#e0e0e0"
+
+        run_preflight [label="Run: jibotool preflight --fix" fillcolor="#e8f5e9" color="#4caf50"]
+        chk_preflight [label="System OS, tools,\nworkspace space, & udev OK?" shape=diamond fillcolor="#fff9c4" color="#fbc02d"]
+        preflight_fix [label="Install missing dependencies\n& configure udev rules via sudo" fillcolor="#e1f5fe" color="#0288d1"]
+    }
+
+    // Phase 1: Build
+    subgraph cluster_phase1 {
+        label="Phase 1: Exploit Compilation"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#e0e0e0"
+
+        run_build [label="Run: jibotool build" fillcolor="#e8f5e9" color="#4caf50"]
+        chk_binary [label="shofel2_t124 built\n& commit hash logged?" shape=diamond fillcolor="#fff9c4" color="#fbc02d"]
+    }
+
+    // Phase 2: Discover
+    subgraph cluster_phase2 {
+        label="Phase 2: Partition Discovery"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#e0e0e0"
+
+        trigger_rcm_1 [label="PHYSICAL TRIGGER JIBO RCM\n1. Power off\n2. Hold Lower Back Button\n3. Tap Middle Button" shape=hexagon fillcolor="#e1f5fe" color="#0288d1" penwidth=2]
+        run_discover [label="Run: jibotool discover" fillcolor="#e8f5e9" color="#4caf50"]
+        chk_emmc_status [label="EMMC_STATUS healthy\n& fully initialized?" shape=diamond fillcolor="#fff9c4" color="#fbc02d"]
+        read_gpt [label="EMMC_READ sector 0 to 33" fillcolor="#e8f5e9" color="#4caf50"]
+        parse_gpt [label="Natively parse GPT table\nLocate partition 5 ('var')" fillcolor="#e8f5e9" color="#4caf50"]
+        chk_gpt [label="Valid GPT signature\n& found 'var' partition?" shape=diamond fillcolor="#fff9c4" color="#fbc02d"]
+        fallback_scan [label="Fallback: Scan GPT entries\nfor partition sized 450-550MB" fillcolor="#e8f5e9" color="#4caf50"]
+        save_state [label="Save partition layout & offsets\nto state.json" shape=note fillcolor="#fffde7" color="#fbc02d"]
+    }
+
+    // Phase 3: Backup
+    subgraph cluster_phase3 {
+        label="Phase 3: Image Backup & Content Review"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#e0e0e0"
+
+        trigger_rcm_2 [label="PHYSICAL TRIGGER JIBO RCM\n(Re-trigger needed between operations)" shape=hexagon fillcolor="#e1f5fe" color="#0288d1" penwidth=1.5]
+        run_backup [label="Run: jibotool backup --background" fillcolor="#e8f5e9" color="#4caf50"]
+        backup_read [label="EMMC_READ full /var partition\n(~9 minutes)" fillcolor="#e8f5e9" color="#4caf50"]
+        run_e2fsck [label="Run e2fsck -y -f to clean\njournal on read backup image" fillcolor="#e8f5e9" color="#4caf50"]
+        content_review [label="Content Review:\nValidate /jibo/mode.json exists" fillcolor="#e8f5e9" color="#4caf50"]
+        chk_backup_valid [label="Does backup contain\nlegitimate /var layout?" shape=diamond fillcolor="#fff9c4" color="#fbc02d"]
+        save_backup_img [label="Create backup set:\n1. var_backup_TIMESTAMP.img\n2. manifest.json" shape=note fillcolor="#fffde7" color="#fbc02d"]
+    }
+
+    // Phase 4: Edit
+    subgraph cluster_phase4 {
+        label="Phase 4: Filesystem Patching (Offline)"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#e0e0e0"
+
+        run_edit [label="Run: jibotool edit <backup.img>" fillcolor="#e8f5e9" color="#4caf50"]
+        cp_work [label="Copy backup.img to var_work.img" fillcolor="#e8f5e9" color="#4caf50"]
+        debugfs_write [label="Modify var_work.img via debugfs:\n1. rm /jibo/mode.json\n2. write host_developer_mode_json\n3. set_inode_field mode 0100644 (S_IFREG)\n4. set_inode_field uid 0, gid 0" fillcolor="#efebe9" color="#8d6e63"]
+        verify_patched [label="Verify edits via debugfs:\nAssert /jibo/mode.json == 'int-developer'\nAssert inode type != 'bad type'" fillcolor="#efebe9" color="#8d6e63"]
+        chk_patch_ok [label="Verification\nsuccessful?" shape=diamond fillcolor="#fff9c4" color="#fbc02d"]
+    }
+
+    // Phase 5: Write
+    subgraph cluster_phase5 {
+        label="Phase 5: Flash Modified Image"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#e0e0e0"
+
+        run_write [label="Run: jibotool write <work.img>\nI_UNDERSTAND_THIS_WRITES_REAL_EMMC --background" fillcolor="#e8f5e9" color="#4caf50"]
+        trigger_rcm_3 [label="PHYSICAL TRIGGER JIBO RCM\n(Re-trigger needed for write session)" shape=hexagon fillcolor="#e1f5fe" color="#0288d1" penwidth=1.5]
+        execute_write [label="EMMC_WRITE to start LBA\n(~14 minutes)" fillcolor="#e8f5e9" color="#4caf50"]
+    }
+
+    // Phase 6: Mandatory Verification
+    subgraph cluster_phase6 {
+        label="Phase 6: Read-Back Verification (MANDATORY)"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#e0e0e0"
+
+        trigger_rcm_4 [label="PHYSICAL TRIGGER JIBO RCM\n(Re-trigger needed for read-back)" shape=hexagon fillcolor="#e1f5fe" color="#0288d1" penwidth=1.5]
+        verify_read [label="EMMC_READ flashed sectors\nto var_verify.img (~9 minutes)" fillcolor="#e8f5e9" color="#4caf50"]
+        compare_images [label="Compute SHA256 of both files\nCompare var_work.img == var_verify.img" fillcolor="#e8f5e9" color="#4caf50"]
+        chk_verify [label="SHA256 Match\nPassed?" shape=diamond fillcolor="#fff9c4" color="#fbc02d"]
+        recovery_warn [label="CRITICAL FAILURE! eMMC corrupted\nDO NOT POWER-CYCLE\n1. Retry write with same image\n2. Run health check\n3. Restore from backup" fillcolor="#ffebee" color="#f44336" fontcolor="#b71c1c" penwidth=2]
+    }
+
+    // Done & Boot
+    subgraph cluster_boot {
+        label="Phase 7: Developer-Mode Boot"
+        style="filled,rounded"
+        fillcolor="#f3e5f5"
+        color="#d1c4e9"
+
+        power_cycle [label="PHYSICAL BOOT\n1. Disconnect USB\n2. Power Cycle Jibo Normally" shape=hexagon fillcolor="#e1f5fe" color="#0288d1" penwidth=1.5]
+        boot_developer [label="Jibo Boots Stock OS\nReads Patched mode.json\nSkips Cloud Gate, Disables Firewall,\nStarts SSH Server" shape=ellipse fillcolor="#f3e5f5" color="#b39ddb"]
+        first_ssh [label="Operator SSH Login:\nssh root@<jibo-ip> (pwd: jibo)\nCHANGE PASSWORD IMMEDIATELY" fillcolor="#e1f5fe" color="#0288d1"]
+    }
+
+    error_abort [label="ABORT FLOW\nInspect logs to resolve hardware/software state" shape=oval fillcolor="#ffebee" color="#f44336" fontcolor="#b71c1c" penwidth=2]
+
+    // Flow Connections
+    start -> run_preflight
+    run_preflight -> chk_preflight
+    chk_preflight -> preflight_fix [label="No" color="#f44336"]
+    preflight_fix -> run_preflight
+    chk_preflight -> run_build [label="Yes" color="#4caf50"]
+
+    run_build -> chk_binary
+    chk_binary -> error_abort [label="No" color="#f44336"]
+    chk_binary -> trigger_rcm_1 [label="Yes" color="#4caf50"]
+
+    trigger_rcm_1 -> run_discover
+    run_discover -> chk_emmc_status
+    chk_emmc_status -> error_abort [label="No" color="#f44336"]
+    chk_emmc_status -> read_gpt [label="Yes" color="#4caf50"]
+    read_gpt -> parse_gpt
+    parse_gpt -> chk_gpt
+    chk_gpt -> fallback_scan [label="No" color="#e65100"]
+    fallback_scan -> save_state
+    chk_gpt -> save_state [label="Yes" color="#4caf50"]
+
+    save_state -> trigger_rcm_2
+    trigger_rcm_2 -> run_backup
+    run_backup -> backup_read
+    backup_read -> run_e2fsck
+    run_e2fsck -> content_review
+    content_review -> chk_backup_valid
+    chk_backup_valid -> error_abort [label="No" color="#f44336"]
+    chk_backup_valid -> save_backup_img [label="Yes" color="#4caf50"]
+
+    save_backup_img -> run_edit
+    run_edit -> cp_work
+    cp_work -> debugfs_write
+    debugfs_write -> verify_patched
+    verify_patched -> chk_patch_ok
+    chk_patch_ok -> error_abort [label="No" color="#f44336"]
+    chk_patch_ok -> run_write [label="Yes" color="#4caf50"]
+
+    run_write -> trigger_rcm_3
+    trigger_rcm_3 -> execute_write
+    execute_write -> trigger_rcm_4
+
+    trigger_rcm_4 -> verify_read
+    verify_read -> compare_images
+    compare_images -> chk_verify
+    chk_verify -> recovery_warn [label="No" color="#f44336"]
+    chk_verify -> power_cycle [label="Yes" color="#4caf50"]
+
+    recovery_warn -> trigger_rcm_3 [style=dashed color="#f44336" label="Retry"]
+    power_cycle -> boot_developer
+    boot_developer -> first_ssh
+}

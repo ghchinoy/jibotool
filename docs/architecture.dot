@@ -1,0 +1,171 @@
+digraph JiboArchitecture {
+    // General Graph Settings
+    fontname="Helvetica,Arial,sans-serif"
+    fontsize=14
+    rankdir=LR
+    splines=true
+    nodesep=0.5
+    ranksep=0.6
+    bgcolor="#fafafa"
+
+    // Default Node Settings
+    node [
+        fontname="Helvetica,Arial,sans-serif"
+        fontsize=11
+        shape=box
+        style="filled,rounded"
+        fillcolor="#ffffff"
+        color="#b0bec5"
+        penwidth=1.5
+        margin="0.15,0.1"
+    ]
+
+    // Default Edge Settings
+    edge [
+        fontname="Helvetica,Arial,sans-serif"
+        fontsize=10
+        color="#455a64"
+        penwidth=1.2
+        arrowsize=0.8
+    ]
+
+    // External Client / Driver
+    subgraph cluster_driver {
+        label="Operator / Automation"
+        style="filled,dashed"
+        fillcolor="#eceff1"
+        color="#b0bec5"
+        fontname="Helvetica,Arial,sans-serif; bold"
+        fontsize=12
+
+        driver [
+            label="Remote Driver\n(AI Assistant or Human)"
+            shape=egg
+            fillcolor="#e1f5fe"
+            color="#0288d1"
+            fontcolor="#01579b"
+            penwidth=2
+        ]
+    }
+
+    // Host Machine Subgraph
+    subgraph cluster_host {
+        label="Linux Host Machine (e.g., Coral Dev Board)"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#cfd8dc"
+        fontname="Helvetica,Arial,sans-serif; bold"
+        fontsize=12
+
+        subgraph cluster_jibotool {
+            label="jibotool Orchestration Layer (Go)"
+            style="filled,rounded"
+            fillcolor="#e8f5e9"
+            color="#81c784"
+            fontname="Helvetica,Arial,sans-serif"
+            fontsize=11
+
+            main [label="CLI Engine\n(main.go)" fillcolor="#c8e6c9" color="#4caf50"]
+            job_mgr [label="Job Manager\n(job.go)" fillcolor="#c8e6c9" color="#4caf50"]
+            preflight [label="Preflight Engine\n(preflight.go)" fillcolor="#c8e6c9" color="#4caf50"]
+            gpt_parser [label="GPT Parser\n(gpt.go)" fillcolor="#c8e6c9" color="#4caf50"]
+            debugfs_iface [label="debugfs Interface\n(debugfs.go)" fillcolor="#c8e6c9" color="#4caf50"]
+            shofel_driver [label="shofel2 Driver\n(shofel2.go & commands.go)" fillcolor="#c8e6c9" color="#4caf50"]
+            
+            state_json [label="State Storage\n(state.json)" shape=note fillcolor="#fff9c4" color="#fbc02d"]
+            status_json [label="Status Log\n(status.json / log)" shape=note fillcolor="#fff9c4" color="#fbc02d"]
+        }
+
+        subgraph cluster_host_os {
+            label="Host OS / Tools"
+            style="filled,rounded"
+            fillcolor="#efebe9"
+            color="#bcaaa4"
+            fontname="Helvetica,Arial,sans-serif"
+            fontsize=11
+
+            debugfs_bin [label="debugfs\n(e2fsprogs)" fillcolor="#d7ccc8" color="#8d6e63"]
+            e2fsck_bin [label="e2fsck\n(e2fsprogs)" fillcolor="#d7ccc8" color="#8d6e63"]
+            udev_rules [label="udev Rules\n(/etc/udev/...)" shape=note fillcolor="#d7ccc8" color="#8d6e63"]
+            shofel2_bin [label="shofel2_t124\n(Compiled C Binary)" fillcolor="#ffcc80" color="#ff9800" penwidth=2]
+        }
+    }
+
+    // Jibo Hardware Subgraph
+    subgraph cluster_jibo {
+        label="Jibo Robot Hardware"
+        style="filled,rounded"
+        fillcolor="#f3e5f5"
+        color="#b39ddb"
+        fontname="Helvetica,Arial,sans-serif; bold"
+        fontsize=12
+
+        usb_rcm [
+            label="NVIDIA APX USB RCM\n(USB 0955:7740)"
+            shape=hexagon
+            fillcolor="#e0f2f1"
+            color="#009688"
+            penwidth=2
+        ]
+
+        subgraph cluster_tegra_k1 {
+            label="NVIDIA Tegra K1 (T124) CPU"
+            style="filled,rounded"
+            fillcolor="#fff3e0"
+            color="#ffcc80"
+            fontname="Helvetica,Arial,sans-serif"
+            fontsize=11
+
+            boot_rom [label="Boot ROM\n(RCM Handshake)" fillcolor="#ffe0b2" color="#ff9800"]
+            iram_payload [label="IRAM Payload\n(emmc_server.bin)" fillcolor="#ffe0b2" color="#ff9800"]
+            emmc_ctrl [label="SDMMC4 eMMC\nController" fillcolor="#ffe0b2" color="#ff9800"]
+        }
+
+        subgraph cluster_emmc_storage {
+            label="eMMC Storage Device"
+            style="filled,rounded"
+            fillcolor="#eceff1"
+            color="#b0bec5"
+            fontname="Helvetica,Arial,sans-serif"
+            fontsize=11
+
+            gpt_table [label="Partition Table\n(GPT)" shape=cylinder fillcolor="#cfd8dc" color="#78909c"]
+            var_part [label="var Partition\n(Partition 5 / ext4)" shape=cylinder fillcolor="#cfd8dc" color="#78909c"]
+            mode_json [label="mode.json\n(System Mode Config)" shape=note fillcolor="#ffe0b2" color="#ff9800"]
+        }
+    }
+
+    // Interactions & Connections
+    driver -> main [label="1. Executes Command\n(plain SSH)" color="#0288d1" penwidth=1.5]
+    driver -> status_json [label="5. Polls Progress\n(fast, cheap read)" style=dashed color="#0288d1"]
+
+    main -> preflight [label="Checks Environment" color="#4caf50"]
+    preflight -> udev_rules [label="Installs Rules" color="#4caf50"]
+    
+    main -> job_mgr [label="Launches in\nBackground" color="#4caf50"]
+    job_mgr -> status_json [label="Updates Status" color="#4caf50"]
+
+    main -> gpt_parser [label="Requests Offsets" color="#4caf50"]
+    gpt_parser -> state_json [label="Caches Layout" color="#4caf50"]
+
+    main -> debugfs_iface [label="Patches Filesystem" color="#4caf50"]
+    debugfs_iface -> debugfs_bin [label="Executes" color="#4caf50"]
+    debugfs_bin -> e2fsck_bin [label="Validates" style=dashed color="#8d6e63"]
+
+    main -> shofel_driver [label="Orchestrates Exploit" color="#4caf50"]
+    shofel_driver -> shofel2_bin [label="Runs as Subprocess\n(Handles Retries)" color="#4caf50" penwidth=1.5]
+    shofel_driver -> state_json [label="Uses Cached LBA" color="#4caf50" style=dashed]
+
+    shofel2_bin -> usb_rcm [label="2. Handshake &\nUpload Payload" color="#ff9800" penwidth=1.5]
+    usb_rcm -> boot_rom [label="USB Connection" color="#009688"]
+    boot_rom -> iram_payload [label="Injects" color="#ff9800"]
+    iram_payload -> emmc_ctrl [label="Initializes" color="#ff9800"]
+
+    shofel2_bin -> usb_rcm [label="3. Sends Commands\n(READ/WRITE/STATUS)" color="#ff9800" penwidth=1.5]
+    iram_payload -> emmc_ctrl [label="Reads/Writes" color="#ff9800"]
+    emmc_ctrl -> gpt_table [label="Parses Offsets" color="#78909c"]
+    emmc_ctrl -> var_part [label="Retrieves/Overwrites" color="#78909c"]
+
+    debugfs_bin -> var_part [label="4. Edits File\n(Offline Image)" color="#8d6e63" penwidth=1.5]
+    var_part -> mode_json [label="Contains" color="#78909c"]
+}

@@ -215,6 +215,36 @@ jibotool jobs <job-id>                            # poll until done+verified
 `jibotool preflight --fix` installs missing packages via `apt-get` where
 possible.
 
+## What you get after unlock
+
+- Root SSH: `ssh root@<jibo-ip>` password `jibo`, **change immediately**.
+- The rootfs is mounted read-only by default; remount to make changes:
+  ```bash
+  mount -o remount,rw /
+  # ...edits...
+  mount -o remount,ro /
+  ```
+- The stock firmware is otherwise intact. All partitions except `/var` are
+  untouched. The eye animation falls back to a green checkmark (the proper
+  eye needs cloud auth), and voice/skills services are non-functional
+  without a cloud substitute.
+- Body service WebSocket API is live at `ws://<jibo-ip>:8282`, LED, motors,
+  display, touch, and IMU are all accessible from here.
+
+## Known gotchas
+
+- **WiFi DHCP race on first developer-mode boot.** `udhcpc` runs before
+  `wpa_supplicant` brings up the interface. SSH via IPv6 link-local (avahi
+  advertises it) and run `udhcpc -i wlan0 -n` to get an IPv4 address.
+- **`/tmp` is `noexec`.** Invoke scripts as `sh /tmp/script.sh`, not
+  `/tmp/script.sh`.
+- **Do not run `jibo-platform-test`.** It's the manufacturing test suite
+  and will stress every motor. On a unit that's sat for years this can
+  fault axes and kick the unit off WiFi.
+- **Body-service idle timer.** After about 5 minutes of display
+  inactivity the panel goes dark. Wake it: `POST {"screen":"on"}` to
+  `http://<jibo-ip>:8282/screen`.
+
 ## Data safety
 
 Only Jibo's `/var` partition is read or written, and only after

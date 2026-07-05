@@ -170,31 +170,37 @@ func printUsage() {
 Usage: jibotool <command> [args] [flags]
 
 Commands:
-  preflight [--fix]              Check required tools/udev/disk space; --fix to remediate
-  build [--update]                Clone/build shofel2_t124 (skips if already built; --update to git pull)
-  status                          Run EMMC_STATUS, report eMMC controller health
-  discover                        Read GPT, locate Jibo's /var partition, save to state.json
-  backup                          Full read of /var to a timestamped image + content review
-  edit <backup.img>                Patch mode.json to int-developer on a copy of the backup
-  patch-file <img> <path-in-img> <content-file> [--show-diff]
-                                   Patch any other file inside an image in place (e.g. WiFi
-                                   config). Content is redacted from output unless --show-diff
-                                   is passed — use for anything that might contain secrets.
-  write <img> I_UNDERSTAND_THIS_WRITES_REAL_EMMC
-                                   Write image back to /var + mandatory read-back verification
-  restore <img> I_UNDERSTAND_THIS_WRITES_REAL_EMMC
-                                   Same as write, for restoring a prior backup
-  health                          Read EXT_CSD, report eMMC wear/life estimation
-  jobs [id]                        List background jobs, or show one job's status.json
+  preflight [--fix]                Verify required host libraries (libusb, e2fsprogs) and udev rules;
+                                   use --fix to automatically install dependencies (via apt-get).
+  build [--update]                 Clone and compile the underlying shofel2_t124 exploit tool and ARM payloads;
+                                   use --update to pull the latest commit from the devsparx repository.
+  status                           Perform EMMC_STATUS check to verify eMMC controller has initialized cleanly.
+  discover                         Read GPT partition table natively and locate Jibo's /var partition (Partition 5);
+                                   saves partition sectors and offsets to state.json.
+  backup                           Perform full read of Jibo's /var partition to a timestamped backup image (~9 min).
+                                   Requires Jibo in RCM mode. Clean journal and verify structure automatically.
+  edit <backup.img>                Create a copy of backup.img to var_work.img and patch mode.json to int-developer.
+                                   Checks ext4 inode integrity and asserts correct file type.
+  patch-file <img_path> <path_in_img> <local_content_file> [--show-diff]
+                                   Patch any other file inside an image in-place (e.g. WiFi config).
+                                   Content is redacted from output logs by default unless --show-diff is passed.
+  write <work_img> I_UNDERSTAND_THIS_WRITES_REAL_EMMC
+                                   Flash work_img back to real eMMC (~14 min) and perform a mandatory
+                                   RCM read-back and SHA256 integrity verification (~9 min).
+  restore <backup_img> I_UNDERSTAND_THIS_WRITES_REAL_EMMC
+                                   Flash backup_img back to real eMMC (~14 min) to restore a prior clean state,
+                                   followed by mandatory read-back and SHA256 integrity verification.
+  health                           Read eMMC's EXT_CSD register and report Device Life Time and Pre-EOL status.
+  jobs [id]                        List all background job IDs, or display a specific job's status.json.
 
-Flags (any command):
-  --workdir <path>                 Override work directory (default /opt/jibo-unlock)
-  --background                     Run this command detached; prints a job dir to poll
-  --job-dir <path>                 (internal) used by background child processes
+Flags (can be passed to any command):
+  --workdir <path>                 Override default work directory (default: /opt/jibo-unlock)
+  --background                     Run command as a detached background process; prints a job ID to poll.
+  --job-dir <path>                 (Internal) Used by background child processes to track task execution.
 
-All long-running commands (status/discover/backup/write/restore/health)
-require Jibo to be physically put into RCM mode. They will report
-"waiting_for_rcm": true in their status until you do so — trigger it any
-time after starting the command, foreground or background.
+Hardware Note:
+  All long-running commands (status/discover/backup/write/restore/health) require Jibo to be physically
+  put into RCM mode (Hold LOWER small back button, tap MIDDLE button). They will report "waiting_for_rcm": true
+  in their status/JSON envelope until you trigger RCM.
 `)
 }

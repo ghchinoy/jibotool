@@ -1,14 +1,15 @@
 # jibotool user guide
 
 The `README.md` at the repo root is the front door — scope, safety summary,
-and a condensed quickstart. This document is the depth behind it: the full
-step-by-step walkthrough, the safety-review findings that shaped the tool,
-the background-job model, troubleshooting, and the history of why this
-tool exists in the first place. Read the README first; come here when you
-need the details.
+and a condensed quickstart. This document is self-contained: everything
+from compiling `jibotool` itself through a full unlock, the safety-review
+findings that shaped the tool, the background-job model, troubleshooting,
+and the history of why this tool exists in the first place. You can start
+here directly without having read the README first.
 
 ## Contents
 
+- [Build jibotool](#build-jibotool)
 - [Prerequisites](#prerequisites)
 - [The RCM button combo](#the-rcm-button-combo)
 - [Step-by-step: the full unlock flow](#step-by-step-the-full-unlock-flow)
@@ -16,12 +17,59 @@ need the details.
 - [Patching other files (e.g. WiFi config)](#patching-other-files-eg-wifi-config)
 - [If write verification fails](#if-write-verification-fails)
 - [What you get after unlock](#what-you-get-after-unlock)
+- [Next steps: restoring full functionality](#next-steps-restoring-full-functionality)
 - [Known gotchas](#known-gotchas)
 - [Safety review: what a careful read of the exploit source turned up](#safety-review-what-a-careful-read-of-the-exploit-source-turned-up)
 - [Why this exists: background and design rationale](#why-this-exists-background-and-design-rationale)
 - [Troubleshooting](#troubleshooting)
 
 ---
+
+## Build jibotool
+
+`jibotool` is a single self-contained Go binary — no runtime dependencies
+beyond the host tools it shells out to (`debugfs`, `e2fsck`, and the
+`shofel2_t124` binary it builds separately, [via `jibotool
+build`](#2-build-the-exploit-jibotool-build), once it's running on your
+host). Build it wherever you have Go installed,
+then get the binary onto the Linux host that's physically wired to Jibo
+over USB (these are often two different machines — e.g. build on your
+laptop, run on a Coral Dev Board).
+
+```bash
+git clone https://github.com/ghchinoy/jibotool.git
+cd jibotool
+go test ./...    # optional, confirms your toolchain/checkout is sane
+```
+
+| Target | Command | Output |
+|---|---|---|
+| Host architecture (for local testing / dry runs) | `make build` | `./bin/jibotool` |
+| Coral Dev Board (linux/arm64) | `make arm64` | `./bin/jibotool-linux-arm64` |
+| Running directly on Jibo's own Tegra K1 (linux/armv7) | `make armv7` | `./bin/jibotool-linux-armv7` |
+
+If your build host *is* the machine wired to Jibo, `make build` is all you
+need — just run `./bin/jibotool` in place. Otherwise, get the
+cross-compiled binary onto that host:
+
+```bash
+# Automatic: builds arm64 and scp's it over in one step
+make deploy HOST=<board-ip> HOST_USER=<user> SSH_KEY=~/.ssh/id_ed25519
+
+# Manual, if you'd rather control each step
+make arm64
+scp ./bin/jibotool-linux-arm64 <user>@<board-ip>:~/jibotool
+ssh <user>@<board-ip> "chmod +x ~/jibotool && ~/jibotool version"
+```
+
+`make deploy` defaults to `HOST=192.168.1.50`, `HOST_USER=mendel`, and
+`SSH_KEY=~/.ssh/id_ed25519` — override any of them for your setup. The
+final `~/jibotool version` in the manual path is just a sanity check that
+the binary landed and runs; expect `jibotool 0.1.0` (or later) back.
+
+From here on, every command in this guide is run **on the host with the
+physical USB connection to Jibo** — either locally (`./bin/jibotool ...`)
+or over SSH to wherever you deployed it (`ssh ... "~/jibotool ..."`).
 
 ## Prerequisites
 
@@ -76,7 +124,11 @@ command if that doesn't fit your host's partitioning.
 Verifies libusb, e2fsprogs, the udev rule, and disk space; `--fix`
 installs/configures what's missing.
 
-### 2. Build the exploit
+### 2. Build the exploit (`jibotool build`)
+
+Not to be confused with [building `jibotool` itself](#build-jibotool)
+above — this is a separate, on-host step that compiles the exploit binary
+`jibotool` drives.
 
 ```bash
 ~/jibotool build
@@ -263,6 +315,47 @@ post-write SHA256 read-back matches exactly. If it doesn't:
 
 ## What you get after unlock
 
+### What Jibo actually looks like
+
+It's worth being precise about this, since "unlocked" doesn't mean
+"back to normal" — here's exactly what to expect on screen, in order:
+
+1. **Red LED** while in RCM, during the unlock process itself (not after).
+2. On power-cycle after a verified write: boot chime → the stock "jibo."
+   splash → a **static green checkmark**. This is the documented
+   `int-developer` success indicator, and it's what confirms the unlock
+   itself worked. SSH is live at this point.
+3. **This is not the familiar animated eye.** Stock `int-developer` mode's
+   own config (`jibo-ssm-int-developer.json`) doesn't launch any skill
+   process at all by default — unlike normal mode, it has no `startSkill`
+   entry — so the checkmark is a static fallback image, not a crashed or
+   loading animation.
+4. Getting to a live Electron-rendered eye (`@be/be`'s actual UI) requires
+   one additional on-device config edit, outside `jibotool`'s scope
+   (`jibotool` only touches the `/var` partition; this file lives on the
+   separate `/usr/local` partition):
+   ```bash
+   ssh root@<jibo-ip>
+   mount -o remount,rw /usr/local
+   # add "startSkill": "@be/be" under services.SkillsService in
+   # /usr/local/etc/jibo-ssm-int-developer.json (jibo-ssm-normal.json has
+   # this already; int-developer's copy ships without it)
+   mount -o remount,ro /usr/local
+   # reboot
+   ```
+5. Even with that fix applied, `@be/be` will render its own built-in
+   offline error screen ("Lost connection to Jibo's server...") instead of
+   the responsive eye, because the stock firmware's notification daemon
+   can't reach `api.jibo.com`. Reaching the actual responsive,
+   voice-capable eye needs a reachable cloud substitute — see
+   [Next steps](#next-steps-restoring-full-functionality) below.
+
+In short: **green checkmark = jibotool's job is done correctly.** The
+animated eye and voice/skills are a separate, later milestone that needs
+more than this tool provides.
+
+### Everything else
+
 - Root SSH: `ssh root@<jibo-ip>` password `jibo`, **change immediately**.
 - The rootfs is mounted read-only by default; remount to make changes:
   ```bash
@@ -271,11 +364,35 @@ post-write SHA256 read-back matches exactly. If it doesn't:
   mount -o remount,ro /
   ```
 - The stock firmware is otherwise intact. All partitions except `/var` are
-  untouched. The eye animation falls back to a green checkmark (the proper
-  eye needs cloud auth), and voice/skills services are non-functional
-  without a cloud substitute.
+  untouched.
 - Body service WebSocket API is live at `ws://<jibo-ip>:8282` — LED,
-  motors, display, touch, and IMU are all accessible from here.
+  motors, display, touch, and IMU are all accessible from here, even
+  before any skill/cloud work is done.
+
+## Next steps: restoring full functionality
+
+`jibotool`'s job ends at a bootable, SSH-accessible, hardware-verified
+`int-developer` Jibo — the green checkmark above. Restoring the animated
+eye, voice, and skills is a separate project, because the stock firmware
+expects to reach Jibo Inc.'s original cloud (`api.jibo.com` and friends),
+which has been offline since 2019. Broadly, there are two ways forward,
+neither of which `jibotool` implements:
+
+- **Run a cloud substitute that speaks the same HTTP/WebSocket API** the
+  stock firmware expects, and point Jibo's TLS trust and DNS/`/etc/hosts`
+  at it instead of the dead `api.jibo.com`. This is real, working
+  protocol-compatible software, not a hypothetical — it's just a separate
+  piece of software from `jibotool`, and not (yet) published as its own
+  standalone repo the way `jibotool` is.
+- **Use an existing community implementation.** The Jibo Revival Group
+  community has independent prior art here — see the "OpenJibo" work in
+  [`transcendentsoftware-jd/JiboExperiments`](https://github.com/transcendentsoftware-jd/JiboExperiments/tree/main/OpenJibo)
+  (MIT licensed), which implements a similar cloud substitute and can be
+  run independently of this project.
+
+Either path also needs the `startSkill` config addition described above
+first — a cloud substitute alone doesn't make `@be/be` launch if nothing
+tells `jibo-ssm` to start it.
 
 ## Known gotchas
 

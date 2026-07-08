@@ -155,6 +155,15 @@ behind `--background`/`jobs`, are diagrammed in the
 
 ## What you get after unlock
 
+**A static green checkmark on Jibo's screen, and root SSH access** — that's
+the confirmed sign the unlock worked. It's *not* the familiar animated eye:
+stock `int-developer` mode doesn't launch any skill process by default, and
+even once one is launched it needs a reachable cloud substitute to do
+anything beyond show its own offline error screen. See
+[What Jibo actually looks like](docs/USERGUIDE.md#what-jibo-actually-looks-like)
+and [Next steps](docs/USERGUIDE.md#next-steps-restoring-full-functionality)
+in the User Guide for the full picture.
+
 - Root SSH: `ssh root@<jibo-ip>` password `jibo`, **change immediately**.
 - The rootfs is mounted read-only by default; remount to make changes:
   ```bash

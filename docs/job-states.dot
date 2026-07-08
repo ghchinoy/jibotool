@@ -1,0 +1,68 @@
+digraph JobStateMachine {
+    // General Graph Settings
+    fontname="Helvetica,Arial,sans-serif"
+    fontsize=14
+    rankdir=TB
+    splines=true
+    nodesep=0.5
+    ranksep=0.5
+    bgcolor="#fafafa"
+
+    // Default Node Settings
+    node [
+        fontname="Helvetica,Arial,sans-serif"
+        fontsize=11
+        shape=box
+        style="filled,rounded"
+        fillcolor="#ffffff"
+        color="#b0bec5"
+        penwidth=1.5
+        margin="0.15,0.1"
+    ]
+
+    // Default Edge Settings
+    edge [
+        fontname="Helvetica,Arial,sans-serif"
+        fontsize=10
+        color="#455a64"
+        penwidth=1.2
+        arrowsize=0.8
+    ]
+
+    label="jibotool background-job state machine (backup / write / restore / health --background)\nEach state is a snapshot of <job_dir>/status.json, polled via `jibotool jobs <id>`"
+    labelloc=t
+    fontsize=13
+
+    start [label="jibotool <cmd> --background" shape=oval fillcolor="#eceff1" color="#607d8b" penwidth=2]
+
+    started [label="Job started\ndone:false  phase:\"...\"" fillcolor="#e8f5e9" color="#4caf50"]
+
+    waiting_rcm [label="waiting_for_rcm: true\n(shofel2_t124 waiting for\nUSB 0955:7740 to enumerate)" shape=diamond fillcolor="#fff9c4" color="#fbc02d"]
+
+    rcm_trigger [label="Human: physical RCM combo\n(hold LOWER, tap MIDDLE)" shape=hexagon fillcolor="#e1f5fe" color="#0288d1"]
+
+    running [label="waiting_for_rcm: false — running\n(phase updates, e.g.\n\"writing image (~14 min)\")" fillcolor="#e8f5e9" color="#4caf50"]
+
+    verify [label="write / restore only:\nre-trigger RCM, read back,\ncompare SHA256" shape=diamond fillcolor="#fff9c4" color="#fbc02d"]
+
+    done_ok [label="done: true\nok: true (verified, if applicable)" shape=box style="filled,rounded" fillcolor="#c8e6c9" color="#2e7d32" penwidth=2]
+
+    done_fail [label="done: true\nok: false\nerror: \"...\"" shape=box style="filled,rounded" fillcolor="#ffcdd2" color="#c62828" penwidth=2]
+
+    recover [label="Human: check error/phase,\nretry or restore from backup\n(do NOT power-cycle Jibo)" shape=hexagon fillcolor="#e1f5fe" color="#0288d1"]
+
+    start -> started
+    started -> waiting_rcm
+    waiting_rcm -> rcm_trigger [label="poll shows waiting_for_rcm:true"]
+    rcm_trigger -> running [label="device enumerates"]
+    running -> done_ok [label="status / discover / health / backup:\ncompletes cleanly"]
+    running -> verify [label="write / restore: after EMMC_WRITE completes"]
+    verify -> done_ok [label="SHA256 matches"]
+    verify -> done_fail [label="SHA256 mismatch or USB error"]
+    running -> done_fail [label="unrecoverable error"]
+    done_fail -> recover
+    recover -> waiting_rcm [label="retry: needs a second RCM trigger" style=dashed]
+
+    { rank=same; waiting_rcm; rcm_trigger }
+    { rank=same; done_ok; done_fail }
+}

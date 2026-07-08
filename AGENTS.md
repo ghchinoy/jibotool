@@ -1,7 +1,9 @@
 # AGENTS.md — jibotool
 
 A non-interactive, JSON-emitting CLI that drives the Jibo RCM eMMC-unlock
-exploit. See `README.md` for full background, architecture, and usage.
+exploit. See `README.md` for scope, safety, and a quickstart, and
+`docs/USERGUIDE.md` for the full step-by-step walkthrough, safety-review
+detail, and background/history.
 
 ## Build System
 
